@@ -38,6 +38,10 @@ struct
     case (ty1, ty2) of (T.INT, T.INT) => ()
        | (_, _) => ((error pos "TODO eq and neq only cover ints"); ())
 
+  fun getValue (lst : (S.symbol * T.ty) list, key : S.symbol, pos) =
+    case lst of [] => (error pos "record type not found"; T.UNIT)
+       | (k, v)::rest => if (key = k) then v else getValue(rest, key, pos)
+
  (**************************************************************************
   *                   TRANSLATING TYPE EXPRESSIONS                         *
   *                                                                        *
@@ -67,7 +71,6 @@ struct
                | SOME ty => (name, ty)
           end
         ) fields, ref ()), pos)
-  (* ...... *)
 
 
 
@@ -100,7 +103,10 @@ struct
           | g (A.AppExp {func, args, pos}) =
                    (* ... *) {exp=(), ty=T.INT}
           | g (A.SeqExp seqs) =
-                   (* ... *) {exp=(), ty=T.INT}
+                   (* Expression sequence *)
+            (case seqs of [] => {exp=(), ty=T.UNIT}
+               | [(ex, pos)] => (transexp (env, tenv) ex)
+               | (ex, pos)::rest => (g (A.SeqExp rest)))
           | g (A.AssignExp {var, exp, pos}) =
                    (* ... *) {exp=(), ty=T.INT}
           | g (A.IfExp {test, then', else' : A.exp option, pos}) =
@@ -110,18 +116,36 @@ struct
           | g (A.ForExp {var, lo, hi, body, pos}) =
                    (* ... *) {exp=(), ty=T.INT}
           | g (A.BreakExp pos) =
-                   (* ... *) {exp=(), ty=T.INT}
+                   (* TODO implement this *) {exp=(), ty=T.INT}
           | g (A.LetExp {decs, body, pos}) =
-                   (* ... *) {exp=(), ty=T.INT}
+                   (* let exp *)
+                     transexp(transdecs(env, tenv, decs)) body
           | g (A.ArrayExp {typ, size, init, pos}) =
                    (* ... *) {exp=(), ty=T.INT}
           | g _ (* other cases *) = 
                              ((error 0 "unknown expression type"); {exp=(), ty=T.INT})
 
         (* function dealing with "var", may be mutually recursive with g *)
-        and h (A.SimpleVar (id,pos)) = (* ... *) {exp=(), ty=T.INT}
-	  | h (A.FieldVar (v,id,pos)) = (* ... *) {exp=(), ty=T.INT}
-	  | h (A.SubscriptVar (v,exp,pos)) = (* ... *) {exp=(), ty=T.INT}
+        and h (A.SimpleVar (id,pos)) = (* SIMPLE VAR: a *)
+          let val ty = S.look(tenv, id) in
+            case ty of NONE => (error pos "unknown type"; {exp=(), ty=T.UNIT})
+               | SOME ty => {exp=(), ty=ty}
+          end
+	  | h (A.FieldVar (v,id,pos)) = (* FIELD VAR: a.key *)
+      let val {exp, ty} = h(v) in
+        case ty of T.RECORD(fields, uniq) => 
+          let val field_ty = getValue(fields, id, pos)
+          in
+            {exp=(), ty=field_ty}
+          end
+           | _ => (error pos "not a record"; {exp=(), ty=T.UNIT})
+      end
+
+	  | h (A.SubscriptVar (v,exp,pos)) = (* ARRAY SUBSCRIPT VAR: a[23] *)
+      let val {exp, ty} = h(v) in
+        case ty of T.ARRAY(typ, uniq) => {exp=(), ty=typ}
+           | _ => (error pos "not an array"; {exp=(), ty=T.UNIT})
+      end
 
      in g expr
     end
@@ -159,7 +183,6 @@ struct
              in 
                transdec(env, S.enter(tenv, name, ty), A.TypeDec(rest))
              end
-
 
   (*** transdecs : (E.env * E.tenv * A.dec list) -> (E.env * E.tenv) ***)
   and transdecs (env,tenv,nil) = (env, tenv)
