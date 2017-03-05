@@ -1,0 +1,81 @@
+The order of parameter variables' definition in function interface should
+be like the following:
+
+If you have    fun f (x:int, y:int, x:string) 
+
+then in the body of f all references of x are to the second x which is a 
+string.
+
+Alternatively, you could insist that the names for parameter variables
+of each function must be different from each other.
+
+==========================================================================
+Programming exercise described in Modern Compiler Implementation in ML, 
+Chapter 5, on page 121 - 122. This assignment is to implement a type 
+checker for the Tiger language. Please read Chapter 5 of Appel very 
+CAREFULLY before starting to work on the assignment.  
+
+You need to do both Part (a) and Part (b) of the type checker (see pp. 
+121 - 122 of Appel). But it is a good idea to make Part (a) work correctly 
+first before embarking on Part (b).
+
+WARNING: sample code in Appel's book contains many syntactic errors, so 
+don't try to copy the code from Appel's book into your semant.sml. 
+Understand the problem and write your own code.
+
+The "/c/cs421/as/as5" now contains the following files:
+
+     absyn.sml
+     errormsg.sml
+     table.sig
+     table.sml
+     symbol.sml
+     parse.sml
+       These are copied from the "as4" directory.
+
+     types.sml
+       The internal representation of types.
+
+     main.sml
+       The top level program used to test your typechecker. 
+       Function call "Main.comp fname" will parse and typecheck the
+       tiger program in file "fname". Function call "Main.testit()" 
+       will parse and typecheck all 49 tiger programs in the 
+       "/c/cs421/as/testcases" directory.
+
+     env.sml
+     semant.sml
+       The skeleton env.sml and semant.sml files. You need to fill in
+       the details in these two files.
+
+     sources.cm
+       The makefile.
+
+     sources-mine.cm
+       The sources.cm file if you want to use my lexer and parser. 
+
+To start working on the assignment, copy all the above files into
+your working directory, copy your tiger.lex and tiger.grm file from your
+previous assignments, then start writing "env.sml" and "semant.sml".
+
+If your lexer or parser still does not work, you can use the 
+"sources-mine.cm" file as your "sources.cm" file. This will use my lexer 
+and parser instead. But I do NOT recommend this. I hope all of you will
+spend time debugging through your old assignments and use your own lexer 
+and parser in the future assignments.
+
+Finally, you need to turn in the following three files 
+
+     README (more documentation is better)
+     env.sml
+     semant.sml
+
+This is probably the LARGEST assignment in this class. To most of you,
+it would probably take days. Please start working on it as early as you 
+can. Also please make sure that your type-checker prints out friendly
+error messages. 
+
+Enjoy,
+
+-Zhong Shao
+(shao-zhong@cs.yale.edu)
