@@ -26,7 +26,7 @@ struct
   fun checkInt ({exp, ty}, pos) = case ty of T.INT => ()
                                      | T.STRING => (error pos "integer required, string found"; ())
                                      | T.NIL => (error pos "integer required, nil found"; ())
-                                     | T.UNIT => (error pos "integer required, unit found"; ())
+                                     | T.UNIT => () (* don't print error message; happened upstream *)
                                      | _ => (error pos "integer required, unknown type found"; ())
   
   fun checkMatchingTypes (ty1, ty2, pos) =
@@ -39,8 +39,9 @@ struct
        | (_, _) => ((error pos "TODO eq and neq only cover ints"); ())
 
   fun getValue (lst : (S.symbol * T.ty) list, key : S.symbol, pos) =
-    case lst of [] => (error pos "record type not found"; T.UNIT)
-       | (k, v)::rest => if (key = k) then v else getValue(rest, key, pos)
+    (error pos ("length: "^(Int.toString (length(lst))));
+    case lst of [] => (error pos ("record type not found for field "^S.name(key)); T.UNIT)
+       | (k, v)::rest => if (key = k) then v else getValue(rest, key, pos))
 
  (**************************************************************************
   *                   TRANSLATING TYPE EXPRESSIONS                         *
@@ -67,7 +68,8 @@ struct
         fn {name, typ, pos} => 
           let val ty = S.look (tenv, typ)
           in
-            case ty of NONE => (error pos "unknown type"; (name, T.UNIT))
+            (error pos "adding one");
+            case ty of NONE => (error pos ("unknown type: "^S.name(typ)); (name, T.UNIT))
                | SOME ty => (name, ty)
           end
         ) fields, ref ()), pos)
@@ -122,20 +124,21 @@ struct
                      transexp(transdecs(env, tenv, decs)) body
           | g (A.ArrayExp {typ, size, init, pos}) =
                    (* ... *) {exp=(), ty=T.INT}
-          | g _ (* other cases *) = 
-                             ((error 0 "unknown expression type"); {exp=(), ty=T.INT})
+          | g (A.VarExp v) = h(v)
 
         (* function dealing with "var", may be mutually recursive with g *)
         and h (A.SimpleVar (id,pos)) = (* SIMPLE VAR: a *)
-          let val ty = S.look(tenv, id) in
-            case ty of NONE => (error pos "unknown type"; {exp=(), ty=T.UNIT})
-               | SOME ty => {exp=(), ty=ty}
+          let val ty = S.look(env, id) in
+            case ty of NONE => (error pos ("undefined variable "^S.name(id)); {exp=(), ty=T.UNIT})
+               | SOME (E.VARentry{access, ty}) => {exp=(), ty=ty}
+               | _ => (error pos ("not a variable entry, probably a func:"^S.name(id)); {exp=(), ty=T.UNIT})
           end
 	  | h (A.FieldVar (v,id,pos)) = (* FIELD VAR: a.key *)
       let val {exp, ty} = h(v) in
         case ty of T.RECORD(fields, uniq) => 
           let val field_ty = getValue(fields, id, pos)
           in
+            (error pos ("NOW THE LENGTH IS "^Int.toString(length(fields))));
             {exp=(), ty=field_ty}
           end
            | _ => (error pos "not a record"; {exp=(), ty=T.UNIT})
@@ -176,11 +179,14 @@ struct
          | [{name, ty, pos}] =>
              let val (ty, pos) = transty(tenv, ty)
              in 
+               case ty of T.RECORD(lst, uniq) => (error pos ("length when adding "^S.name(name)^": "^Int.toString(length(lst))))
+                  | _ => (error pos "not a record apparently wtf");
                (env, S.enter(tenv, name, ty))
              end
          | {name, ty, pos}::rest => 
              let val (ty, pos) = transty(tenv, ty)
-             in 
+             in
+               (error pos ("entering type: "^S.name(name)));
                transdec(env, S.enter(tenv, name, ty), A.TypeDec(rest))
              end
 

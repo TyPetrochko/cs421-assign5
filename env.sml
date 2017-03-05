@@ -36,7 +36,14 @@ struct
   type env = enventry Symbol.table
 
   (* here you need to add all primtive types into the base_tenv *)
-  val base_tenv = (* fill in the details *) S.empty
+  val base_tenv = S.enter(
+    S.enter(
+      S.empty,
+      S.symbol "int",
+      T.INT),
+    S.symbol "string",
+    T.STRING
+  )
  
   (* here you need to add all primitive library functions into the base_env *)
   val base_env = (* fill in the details *) S.empty
