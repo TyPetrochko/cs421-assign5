@@ -23,17 +23,50 @@ struct
 
   (* ...... *)
 
-  fun checkInt _ = ()
+  fun checkInt ({exp, ty}, pos) = case ty of T.INT => ()
+                                     | T.STRING => (error pos "integer required, string found"; ())
+                                     | T.NIL => (error pos "integer required, nil found"; ())
+                                     | T.UNIT => (error pos "integer required, unit found"; ())
+                                     | _ => (error pos "integer required, unknown type found"; ())
+  
+  fun checkMatchingTypes (ty1, ty2, pos) =
+    case (ty1, ty2) of (T.INT, T.INT) => ()
+       | (T.STRING, T.STRING) => ()
+       | (_, _) => ((error pos "TODO nonmatching types"); ())
 
+  fun checkEqualityTypes ({exp=exp1, ty=ty1}, {exp=exp2, ty=ty2}, pos) =
+    case (ty1, ty2) of (T.INT, T.INT) => ()
+       | (_, _) => ((error pos "TODO eq and neq only cover ints"); ())
 
  (**************************************************************************
   *                   TRANSLATING TYPE EXPRESSIONS                         *
   *                                                                        *
   *              transty : (E.tenv * A.ty) -> (T.ty * A.pos)               *
   *************************************************************************)
-  fun transty (tenv, A.ArrayTy(id, pos)) = (* ... *) (T.UNIT, pos)
-    | transty (tenv, _ (* other cases *)) = (* ... *) (T.UNIT, 0)
-
+  fun transty (tenv, A.ArrayTy(id, pos)) = 
+    (* TODO: figure out uniq stuff (ref unit) *)
+  let val typ = S.look (tenv, id (* ARRAY TYPE: type a = array of int *))
+  in
+    case typ of SOME ty => (T.ARRAY(ty, ref ()), pos)
+       | NONE => (error pos "missing type"; (T.ARRAY(T.UNIT, ref ()), pos))
+  end
+    | transty (tenv, A.NameTy(id, pos)) = (* NAME TYPE: type a = int *)
+  let val typ = S.look (tenv, id)
+  in
+    (T.NAME(id, ref typ), pos)
+  end
+    | transty (tenv, A.RecordTy fields) = (* RECORD TYPE: type a = {key : int, value : int}*)
+    case fields of [] =>
+      (T.RECORD([], ref ()), 0)
+       | {name, typ, pos}::rest =>
+      (T.RECORD(map(
+        fn {name, typ, pos} => 
+          let val ty = S.look (tenv, typ)
+          in
+            case ty of NONE => (error pos "unknown type"; (name, T.UNIT))
+               | SOME ty => (name, ty)
+          end
+        ) fields, ref ()), pos)
   (* ...... *)
 
 
@@ -46,10 +79,10 @@ struct
   **************************************************************************)
   fun transexp (env, tenv) expr =
     let fun g (A.OpExp {left,oper=A.NeqOp,right,pos}) = 
-                   (* ... *) {exp=(), ty=T.INT}
+                   (checkEqualityTypes (g left, g right, pos); {exp=(), ty=T.INT})
 
           | g (A.OpExp {left,oper=A.EqOp,right,pos}) =
-                   (* ... *) {exp=(), ty=T.INT} 
+                   (checkEqualityTypes (g left, g right, pos); {exp=(), ty=T.INT})
 
           | g (A.OpExp {left,oper,right,pos}) =
  		   (checkInt (g left, pos);
@@ -58,8 +91,32 @@ struct
 
           | g (A.RecordExp {typ,fields,pos}) =
                    (* ... *) {exp=(), ty=T.RECORD ((* ? *) [], ref ())}
-
-          | g _ (* other cases *) = {exp=(), ty=T.INT} 
+          | g (A.StringExp (s, pos)) =
+                   (* ... *) {exp=(), ty=T.STRING}
+          | g (A.NilExp) =
+                   (* ... *) {exp=(), ty=T.NIL}
+          | g (A.IntExp i) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.AppExp {func, args, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.SeqExp seqs) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.AssignExp {var, exp, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.IfExp {test, then', else' : A.exp option, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.WhileExp {test, body, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.ForExp {var, lo, hi, body, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.BreakExp pos) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.LetExp {decs, body, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g (A.ArrayExp {typ, size, init, pos}) =
+                   (* ... *) {exp=(), ty=T.INT}
+          | g _ (* other cases *) = 
+                             ((error 0 "unknown expression type"); {exp=(), ty=T.INT})
 
         (* function dealing with "var", may be mutually recursive with g *)
         and h (A.SimpleVar (id,pos)) = (* ... *) {exp=(), ty=T.INT}
@@ -74,9 +131,34 @@ struct
   *                                                                        *
   *  transdec : (E.env * E.tenv * A.dec) -> (E.env * E.tenv)               *
   **************************************************************************)
-  and transdec (env, tenv, A.VarDec(declist)) = (* ... *) (env, tenv)
-    | transdec (env, tenv, A.FunctionDec(declist)) = (* ... *) (env, tenv)
-    | transdec (env, tenv, A.TypeDec(declist)) = (* ... *) (env, tenv)
+  and transdec (env, tenv, A.VarDec {var={name, escape}, typ, init, pos}) = 
+      (* VARIABLE DECLARATION, TODO: Make sure expression of type NIL is record *)
+      let val {exp, ty} = (transexp(env, tenv) init)
+      in
+        (* first check if constraint *)
+        case typ of SOME(symbol, pos) => let val ty2 = S.look (tenv, symbol)
+            in
+              case ty2 of NONE => ()
+                 | SOME ty2 => checkMatchingTypes(ty, ty2, pos)
+            end
+           | NONE => ();
+        (S.enter(env, name, E.VARentry{access=(), ty=ty}), tenv)
+      end
+    | transdec (env, tenv, A.FunctionDec(declist)) = 
+      (* TODO: FUNCTION DECLARATION *) (env, tenv)
+    | transdec (env, tenv, A.TypeDec(declist)) = 
+      (* TYPE DECLARATION *) 
+      case declist of [] => (env, tenv)
+         | [{name, ty, pos}] =>
+             let val (ty, pos) = transty(tenv, ty)
+             in 
+               (env, S.enter(tenv, name, ty))
+             end
+         | {name, ty, pos}::rest => 
+             let val (ty, pos) = transty(tenv, ty)
+             in 
+               transdec(env, S.enter(tenv, name, ty), A.TypeDec(rest))
+             end
 
 
   (*** transdecs : (E.env * E.tenv * A.dec list) -> (E.env * E.tenv) ***)
