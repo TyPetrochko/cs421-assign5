@@ -39,9 +39,28 @@ struct
        | (_, _) => ((error pos "TODO eq and neq only cover ints"); ())
 
   fun getValue (lst : (S.symbol * T.ty) list, key : S.symbol, pos) =
-    (error pos ("length: "^(Int.toString (length(lst))));
     case lst of [] => (error pos ("record type not found for field "^S.name(key)); T.UNIT)
-       | (k, v)::rest => if (key = k) then v else getValue(rest, key, pos))
+       | (k, v)::rest => if (key = k) then v else getValue(rest, key, pos)
+
+  fun getTypeName t = case t of T.RECORD(lst, uniq) => "T.RECORD"
+                         | T.NIL => "T.NIL"
+                         | T.INT => "T.INT"
+                         | T.STRING => "T.STRING"
+                         | T.ARRAY(ty, uniq) => "T.ARRAY"
+                         | _ => "Unknown"
+  
+  fun printKVList l = case l of [] => []
+                         | (s, t)::rest => ((print ("Entry: ("^S.name(s)^","^getTypeName(t)^")\n")); (s, t)::(printKVList rest))
+
+  fun debugRecord r = case r of T.RECORD(l, u) => (printKVList l)
+                         | _ => ("Not a record!"; [])
+
+  fun checkHasFieldMatch(name, fields, sym, ty, pos) = 
+    case fields of [] => 
+      ((error pos ("field "^S.name(sym)^" of type "^getTypeName(ty)^
+      " does not exist for type "^S.name(name))); ())
+       | (s, t)::rest => if (S.name(s) = S.name(sym) andalso t = ty) then ()
+                         else checkHasFieldMatch(name, rest, sym, ty, pos)
 
  (**************************************************************************
   *                   TRANSLATING TYPE EXPRESSIONS                         *
@@ -68,7 +87,6 @@ struct
         fn {name, typ, pos} => 
           let val ty = S.look (tenv, typ)
           in
-            (error pos "adding one");
             case ty of NONE => (error pos ("unknown type: "^S.name(typ)); (name, T.UNIT))
                | SOME ty => (name, ty)
           end
@@ -94,8 +112,20 @@ struct
 		    checkInt (g right, pos);
  		    {exp=(), ty=T.INT})
 
-          | g (A.RecordExp {typ,fields,pos}) =
-                   (* ... *) {exp=(), ty=T.RECORD ((* ? *) [], ref ())}
+          | g (A.RecordExp {typ,fields,pos}) = 
+            (* TODO check all record fields are filled *)
+            let val ty = S.look(tenv, typ) in
+              case ty of 
+                   SOME(T.RECORD(recfields, uniq)) => {exp=(), ty=T.RECORD (map (
+                      fn (sym, ex, pos) => let val {exp, ty} = g(ex)
+                                           in
+                                             (checkHasFieldMatch(typ, recfields, sym, ty, pos));
+                                             (sym, ty)
+                                           end
+                                           ) fields, ref ())}
+                 | NONE => (error pos ("unknown type: "^S.name(typ)); {exp=(), ty=T.RECORD([], ref ())})
+                 | _ => (error pos ("may not be a record: "^S.name(typ)); {exp=(), ty=T.RECORD([], ref ())})
+            end
           | g (A.StringExp (s, pos)) =
                    (* ... *) {exp=(), ty=T.STRING}
           | g (A.NilExp) =
@@ -138,7 +168,6 @@ struct
         case ty of T.RECORD(fields, uniq) => 
           let val field_ty = getValue(fields, id, pos)
           in
-            (error pos ("NOW THE LENGTH IS "^Int.toString(length(fields))));
             {exp=(), ty=field_ty}
           end
            | _ => (error pos "not a record"; {exp=(), ty=T.UNIT})
@@ -179,8 +208,6 @@ struct
          | [{name, ty, pos}] =>
              let val (ty, pos) = transty(tenv, ty)
              in 
-               case ty of T.RECORD(lst, uniq) => (error pos ("length when adding "^S.name(name)^": "^Int.toString(length(lst))))
-                  | _ => (error pos "not a record apparently wtf");
                (env, S.enter(tenv, name, ty))
              end
          | {name, ty, pos}::rest => 

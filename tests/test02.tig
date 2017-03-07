@@ -1,6 +1,6 @@
 /* test02.tig -- separate namespaces for types and variables/functions */
 let type x = {fst:int, snd:int}
-    var intx := x {fst = 3, snd = 4}
+    var int := x {fst = 3, snd = 4}
     var x := 5
 in
     int.fst + 
