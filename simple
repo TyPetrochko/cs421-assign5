@@ -1,6 +1,24 @@
-let var a := 1
-    var b := 2
-    var c := 3
-in 
-  a + b + c
+let
+  type dog = {name : string, breed : string, length : int}
+  type cat = {name : string, breed : string, bestfriend : dog}
+
+  type cm = int
+  type meters = int
+  type familyname = string
+  
+  function getADog(whatToNameIt : string) = dog {name = whatToNameIt, breed = "Golden", length = 10}
+  function getACat(buddy : dog) = cat {name = buddy.name, breed = "Siamese", bestfriend = buddy}
+
+  function appendStrings(s1 : string, s2 : string) = "TODO"
+
+  var result := "nil"
+  var thisWillFail := dog {name = "FIDO", breed = "Dachsund", length = 100}
+
+  var handlength : cm := 8
+  var height : meters := 2
+  var myfamilyname : familyname := "Petrochko"
+in
+  result := let var cat := getACat(getADog("Fido")) in appendStrings(cat.name, " sucksss") end;
+  handlength := height;
+  myfamilyname := height
 end
