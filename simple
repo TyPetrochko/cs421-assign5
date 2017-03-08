@@ -12,13 +12,8 @@ let
   function appendStrings(s1 : string, s2 : string) = "TODO"
 
   var result := "nil"
-  var thisWillFail := dog {name = "FIDO", breed = "Dachsund", length = 100}
-
-  var handlength : cm := 8
-  var height : meters := 2
-  var myfamilyname : familyname := "Petrochko"
+  var dog := dog {name = "FIDO", breed = "Dachsund", length = 100}
+  var cat := getACat(dog)
 in
-  result := let var cat := getACat(getADog("Fido")) in appendStrings(cat.name, " sucksss") end;
-  handlength := height;
-  myfamilyname := height
+  dog.name := cat.name
 end

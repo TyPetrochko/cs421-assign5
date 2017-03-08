@@ -39,6 +39,10 @@ struct
               end)
          | _ => T.NIL
 
+  fun flattenType(t) = case t of T.NAME(symbol, tyRef) => getBaseType(t)
+                          | T.ARRAY(typ, uniq) => flattenType(typ)
+                          | _ => t
+
   fun doTypesMatch(ty1, ty2) =
     case (ty1, ty2) of (T.INT, T.INT) => true
        | (T.STRING, T.STRING) => true
@@ -46,7 +50,6 @@ struct
        | (T.UNIT, T.UNIT) => true
        | (T.RECORD(lst1, uniq1), T.RECORD(lst2, uniq2)) => (uniq1 = uniq2)
        | (T.ARRAY(t1, uniq1), T.ARRAY(t2, uniq2)) => (uniq1 = uniq2)
-       (* | (T.NAME(s1, t1), T.NAME(s2, t2)) => (s1 = s2 andalso t1 = t2) *) (* TODO is this right? *)
        | (T.NAME(name1, typeRef1), T.NAME(name2, typeRef2)) => 
            (getBaseType(ty1) = getBaseType(ty2))
        | (T.NAME(name, typeRef), _) => 
@@ -75,7 +78,7 @@ struct
                          | T.UNIT => "UNIT"
                          | T.NAME(sym, reference) => (case !reference of NONE => "NAME" 
                                                       | SOME(t) => getTypeName(t))
-                         | T.ARRAY(ty, uniq) => "ARRAY"
+                         | T.ARRAY(ty, uniq) => ("ARRAY OF "^(getTypeName(ty)))
   
   fun printKVList l = case l of [] => []
                          | (s, t)::rest => ((print ("Entry: ("^S.name(s)^","^getTypeName(t)^")\n")); (s, t)::(printKVList rest))
@@ -90,28 +93,50 @@ struct
        | (s, t)::rest => if (S.name(s) = S.name(sym) andalso t = ty) then ()
                          else checkHasFieldMatch(name, rest, sym, ty, pos)
   
-  fun getVarType(var, env, tenv) = case var of A.SimpleVar(symbol, pos) => 
-    (case S.look(env, symbol) of SOME(E.VARentry{access, ty}) => ty
-        | _ => (error pos ("var "^S.name(symbol)^" does not exist"); T.NIL))
+  fun castingRecordToNil(ty1, ty2) = 
+    case (ty1, ty2) of (T.RECORD(fields, uniq), T.NIL) => true
+       | _ => false
+  
+  fun getVarType(var, env, tenv) = 
+    case var of 
+         A.SimpleVar(symbol, pos) => 
+            (case S.look(env, symbol) of SOME(E.VARentry{access, ty}) => ty
+                | _ => (error pos ("var "^S.name(symbol)^" does not exist"); T.NIL))
        | A.FieldVar(var, symbol, pos) =>
-           (case S.look(tenv, S.symbol (getVarName(var))) of SOME(T.RECORD(fields, uniq)) => 
+          (* Lookup type of everything before the dot *)
+          (case getVarType(var, env, tenv) of T.RECORD(fields, uniq) => 
              let val fieldtype = getValue(fields, symbol, pos)
              in
                if (fieldtype = T.UNIT) then T.NIL else fieldtype
              end
-              | NONE => (error pos "error in programming, should not reach here"; T.NIL)
-              | SOME(typ) => (error pos ("var "^getVarName(var)^" is not a record"); T.NIL))
-       | A.SubscriptVar(var, exp, pos) => getVarType(var, env, tenv)
-  
-  (* fun getVarType(var, env) = 
-    case var of A.SimpleVar(symbol, pos) => 
-      (case S.look(env, symbol) of 
-            NONE => (error pos "error in programming, should not reach here"; T.NIL)
-          | SOME(typ) => typ)
-          | A.FieldVar(var, symbol, pos) => 
-              (case S.look(env, S.symbol(getVarName(var))) of )
-              *)
+              | typ => (error pos ("var "^getVarName(var)^" is not a record, it's a "^getTypeName(typ)); T.NIL))
+       | A.SubscriptVar(var, exp, pos) => 
+           let val arrayType = getVarType(var, env, tenv)
+           in (
+            case arrayType of T.ARRAY(ty, uniq) => ty
+               | _ => (error pos ("not an array"); T.NIL)
+               )
+           end
 
+
+  fun checkEqualityOp ({exp=leftExp, ty=leftType}, {exp=rightExp, ty=rightType}, pos) = 
+    (if (castingRecordToNil(leftType, rightType)) then {exp=(), ty=T.INT}
+     else case (leftType, rightType) of (T.INT, T.INT) => {exp=(), ty=T.INT}
+           | (T.STRING, T.STRING) => {exp=(), ty=T.INT}
+           | (T.ARRAY(ty1, uniq1), T.ARRAY(ty2, uniq2)) => 
+              if (uniq1 = uniq2) then
+                {exp=(), ty=T.INT}
+              else (error pos ("mismatch in comparison"); {exp=(), ty=T.INT})
+           | (T.RECORD(lst1, uniq1), T.RECORD(lst2, uniq2)) => 
+              if (uniq1 = uniq2) then
+                {exp=(), ty=T.INT}
+              else (error pos ("mismatch in comparison"); {exp=(), ty=T.INT})
+           | (_, _) => (error pos ("bad arguments to comparison"); {exp=(), ty=T.INT}))
+ 
+  fun checkComparisonOp ({exp=leftExp, ty=leftType}, {exp=rightExp, ty=rightType}, pos) = 
+      (case (leftType, rightType) of (T.INT, T.INT) => {exp=(), ty=T.INT}
+         | (T.STRING, T.STRING) => {exp=(), ty=T.INT}
+         | (_, _) => (error pos ("bad types for comparison"); {exp=(), ty=T.INT}))
 
 
  (**************************************************************************
@@ -153,12 +178,12 @@ struct
   *  transexp : (E.env * E.tenv) -> (A.exp -> {exp : ir_code, ty : T.ty})  *
   **************************************************************************)
   fun transexp (env, tenv) expr =
-    let fun g (A.OpExp {left,oper=A.NeqOp,right,pos}) = 
-                   (checkEqualityTypes (g left, g right, pos); {exp=(), ty=T.INT})
-
-          | g (A.OpExp {left,oper=A.EqOp,right,pos}) =
-                   (checkEqualityTypes (g left, g right, pos); {exp=(), ty=T.INT})
-
+    let fun g (A.OpExp {left,oper=A.NeqOp,right,pos}) = checkEqualityOp(g left, g right, pos)
+          | g (A.OpExp {left,oper=A.EqOp,right,pos}) = checkEqualityOp(g left, g right, pos)
+          | g (A.OpExp {left,oper=A.LtOp,right,pos}) = checkComparisonOp(g left, g right, pos)
+          | g (A.OpExp {left,oper=A.LeOp,right,pos}) = checkComparisonOp(g left, g right, pos)
+          | g (A.OpExp {left,oper=A.GtOp,right,pos}) = checkComparisonOp(g left, g right, pos)
+          | g (A.OpExp {left,oper=A.GeOp,right,pos}) = checkComparisonOp(g left, g right, pos)
           | g (A.OpExp {left,oper,right,pos}) =
  		   (checkInt (g left, pos);
 		    checkInt (g right, pos);
@@ -228,17 +253,23 @@ struct
                    (* Expression sequence *)
             (case seqs of [] => {exp=(), ty=T.UNIT}
                | [(ex, pos)] => (transexp (env, tenv) ex)
-               | (ex, pos)::rest => ((transexp (env, tenv)); g (A.SeqExp rest)))
+               | (ex, pos)::rest => ((transexp (env, tenv) ex); g (A.SeqExp rest)))
           | g (A.AssignExp {var, exp, pos}) =
             let 
               val {exp, ty} = g(exp)
               val assignedVarType = getVarType(var, env, tenv)
             in
-              if(doTypesMatch(assignedVarType, ty) andalso not(assignedVarType = T.NIL))
+              if(castingRecordToNil(assignedVarType, ty))
               then {exp=(), ty=T.UNIT}
-              else
-                (error pos ("variable "^getVarName(var)^" must be of type "^getTypeName(assignedVarType)^", not "^getTypeName(ty));
-                {exp=(), ty=T.UNIT})
+              else(
+                if(doTypesMatch(assignedVarType, ty) andalso (assignedVarType <> T.NIL))
+                then {exp=(), ty=T.UNIT}
+                else
+                  (
+                    if (assignedVarType = T.NIL) then
+                      (* Already handled upstream *) ()
+                    else error pos ("mismatched assignment, lefthand side is "^getTypeName(assignedVarType)^", right is "^getTypeName(ty));
+                  {exp=(), ty=T.UNIT}))
             end
           | g (A.IfExp {test, then', else' : A.exp option, pos}) =
                    (* TODO *) {exp=(), ty=T.INT}
@@ -252,7 +283,23 @@ struct
                    (* let exp *)
                      transexp(transdecs(env, tenv, decs)) body
           | g (A.ArrayExp {typ, size, init, pos}) =
-                   (* ... *) {exp=(), ty=T.INT}
+            let 
+              val {exp, ty} = g(init)
+              val potentialType = S.look(tenv, typ)
+            in
+              (* Make sure the type is valid *)
+              (case potentialType of NONE => 
+                ((error pos ("undefined type "^S.name(typ))); 
+                {exp=(), ty=T.ARRAY(ty, ref ())})
+                  | SOME(T.ARRAY(arrayType, arrayUniq)) => (
+                    if (not (doTypesMatch(arrayType, ty)))
+                    then 
+                      (error pos ("mismatched types on array initialization: "^getTypeName(arrayType)^" vs "^getTypeName(ty)); ())
+                    else 
+                      ();
+                    {exp=(), ty=T.ARRAY(ty, arrayUniq)})
+                  | _ => (error pos (S.name(typ)^" is not an array"); {exp=(), ty=T.ARRAY(ty, ref ())}))
+            end
           | g (A.VarExp v) = h(v)
 
         (* function dealing with "var", may be mutually recursive with g *)
@@ -275,7 +322,7 @@ struct
 	  | h (A.SubscriptVar (v,exp,pos)) = (* ARRAY SUBSCRIPT VAR: a[23] *)
       let val {exp, ty} = h(v) in
         case ty of T.ARRAY(typ, uniq) => {exp=(), ty=typ}
-           | _ => (error pos "not an array"; {exp=(), ty=T.UNIT})
+           | _ => (error pos ("not an array, but rather a "^getTypeName(ty)); {exp=(), ty=T.UNIT})
       end
 
      in g expr
@@ -291,18 +338,23 @@ struct
       let val {exp, ty} = (transexp(env, tenv) init)
       in
         (* first check if constraint *)
-        case typ of SOME(symbol, pos) => let val ty2 = S.look (tenv, symbol)
+        (case typ of SOME(symbol, pos) => 
+            let val ty2 = S.look (tenv, symbol)
             in
-              case ty2 of NONE => ((error pos ("undeclared type "^S.name(symbol))); ())
+              (case ty2 of NONE => ((error pos ("undeclared type "^S.name(symbol))); (env, tenv))
                  | SOME ty2 => 
-                     if (not (doTypesMatch(ty, ty2))) 
+                     if (not (doTypesMatch(ty, ty2)) andalso not(castingRecordToNil(ty2, ty)))
                      then 
-                       (error pos (S.name(name)^" must be of type "^getTypeName(ty)^", not "^getTypeName(ty2)))
-                     else ()
+                       (error pos (S.name(name)^" must be of type "^getTypeName(ty)^", not "^getTypeName(ty2));
+                       (S.enter(env, name, E.VARentry{access=(), ty=ty2}), tenv) )
+                     else 
+                       (S.enter(env, name, E.VARentry{access=(), ty=ty2}), tenv))
             end
-           | NONE => ();
-        (S.enter(env, name, E.VARentry{access=(), ty=ty}), tenv)
-      end
+           | NONE => ((if (ty = T.NIL) then 
+             (error pos "Illegal assignment of NIL to declaration of a variable of an unknown type"; ())
+                       else ());
+           (S.enter(env, name, E.VARentry{access=(), ty=ty}), tenv))) (* return here *)
+        end
     | transdec (env, tenv, A.FunctionDec(declist)) =
       (case declist of [] => (env, tenv)
          | {name, params, result, body, pos}::rest =>
@@ -341,7 +393,7 @@ struct
       case declist of [] => (env, tenv)
          | [{name, ty, pos}] =>
              let val (ty, pos) = transty(tenv, ty)
-             in 
+             in
                (env, S.enter(tenv, name, ty))
              end
          | {name, ty, pos}::rest => 

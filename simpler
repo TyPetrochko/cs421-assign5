@@ -1,0 +1,21 @@
+let 
+  type arr = array of int
+  type dub = array of arr
+  
+  var arr1 := arr [10] of 0
+  var arr2 := arr [-1] of 0
+  
+  var meta := dub [55] of arr1
+  
+  var s := "string"
+  var i := 3
+in
+  arr1[0] := arr2[4];
+  arr1[5] := s; /* should be error */
+
+  meta[1] := arr2;
+  meta[1][2] := 3;
+
+  meta[1][2][3] := 1 /* should be error */
+end
+
