@@ -321,6 +321,7 @@ struct
                     *
                     * TODO make sure you can't assign to the special var...
                     * *) 
+                    {exp=(), ty=T.UNIT}
           | g (A.BreakExp pos) =
                    (* TODO implement this *) {exp=(), ty=T.INT}
           | g (A.LetExp {decs, body, pos}) =
