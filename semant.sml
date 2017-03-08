@@ -272,11 +272,55 @@ struct
                   {exp=(), ty=T.UNIT}))
             end
           | g (A.IfExp {test, then', else' : A.exp option, pos}) =
-                   (* TODO *) {exp=(), ty=T.INT}
+              (case else' of NONE => (
+                (* If-then *)
+                let
+                  val {exp=testExp, ty=testType} = g(test)
+                  val {exp=thenExp, ty=thenType} = g(then')
+                in
+                  (* Make sure test type is an integer
+                   * Evaluate body expression
+                   * Return a unit type *)
+                   if (testType <> T.INT) then (error pos ("test condition not an integer"); ()) else ();
+                   {exp=(), ty=T.UNIT}
+                end
+                )
+                 | SOME(elseExp) => (
+                (* If-then-else *)
+                let
+                  val {exp=testExp, ty=testType} = g(test)
+                  val {exp=thenExp, ty=thenType} = g(then')
+                  val {exp=elseExp, ty=elseType} = g(elseExp)
+                in
+                  (* Make sure test is an integer 
+                   * Make sure then / else types match 
+                   * Return the first one
+                   * TODO make sure that body doesn't return anything *)
+                   if (testType <> T.INT) then (error pos ("test condition not an integer"); ()) else ();
+                   if (not(doTypesMatch(thenType, elseType))) then (error pos ("then and else type differ"); ()) else ();
+                   {exp=(), ty=thenType}
+                end
+                ))
           | g (A.WhileExp {test, body, pos}) =
-                   (* TODO *) {exp=(), ty=T.INT}
+                   (* Make sure that test condition is an int
+                    * Return unit type
+                    * TODO Make sure that body does not return anything *)
+                  (let 
+                     val {exp=testExp, ty=testType} = g(test)
+                     val {exp=bodyExp, ty=bodyType} = g(body)
+                   in 
+                     (if(testType <> T.INT) then (error pos ("test condition not an integer"); ()) else ())
+                   end; {exp=(), ty=T.UNIT}) 
           | g (A.ForExp {var, lo, hi, body, pos}) =
-                   (* TODO *) {exp=(), ty=T.INT}
+                   (* TODO 
+                    * Evaluate lo and hi expressions (but not body)
+                    * Make sure both lo and hi are integers
+                    * Create a new variable env where var's name maps to lo's type
+                    * Evaluate body using the new environment
+                    *
+                    *
+                    * TODO make sure you can't assign to the special var...
+                    * *) 
           | g (A.BreakExp pos) =
                    (* TODO implement this *) {exp=(), ty=T.INT}
           | g (A.LetExp {decs, body, pos}) =

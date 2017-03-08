@@ -16,6 +16,10 @@ in
   meta[1] := arr2;
   meta[1][2] := 3;
 
-  meta[1][2][3] := 1 /* should be error */
+  meta[1][2][3] := 1; /* should be error */
+
+  if(meta[1] := arr1) then 5 else 6;
+
+  i := while(23) do (meta[1]; 5)
 end
 
